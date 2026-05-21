@@ -307,7 +307,9 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
             const uniqueTags = new Set();
             rawData.customCoordinates.forEach(loc => {
                 if (loc.extra && loc.extra.tags) {
-                    loc.extra.tags.forEach(tag => uniqueTags.add(tag));
+                    const rawTags = loc.extra.tags;
+                    const tags = Array.isArray(rawTags) ? rawTags : [rawTags];
+                    tags.forEach(tag => uniqueTags.add(String(tag)));
                 }
             });
             
@@ -403,18 +405,33 @@ function sanitizeFilenameSegment(text) {
     return sanitized || 'Full';
 }
 
+function normalizeTagValue(value) {
+    return String(value ?? '')
+        .normalize('NFKC')
+        .replace(/[／⁄∕]/g, '/')
+        .replace(/\s*\/\s*/g, '/')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function parseTargetTag() {
     const targetTag = document.getElementById('targetTag').value.trim();
-    if (targetTag === lastParsedTag) return; 
+    const normalizedTargetTag = normalizeTagValue(targetTag);
+    if (normalizedTargetTag === lastParsedTag) return; 
     
     parsedPoints = [];
     matchCount = 0;
     
-    if (rawData && rawData.customCoordinates && targetTag !== "") {
+    if (rawData && rawData.customCoordinates && normalizedTargetTag !== "") {
         rawData.customCoordinates.forEach(loc => {
-            const tags = (loc.extra && loc.extra.tags) ? loc.extra.tags : [];
-            if (loc.lat && loc.lng && tags.includes(targetTag)) {
-                parsedPoints.push(turf.point([loc.lng, loc.lat], { lat: loc.lat, lng: loc.lng }));
+            const rawTags = (loc.extra && loc.extra.tags) ? loc.extra.tags : [];
+            const tags = Array.isArray(rawTags) ? rawTags : [rawTags];
+            const hasTagMatch = tags.some(tag => normalizeTagValue(tag) === normalizedTargetTag);
+            const lat = Number(loc.lat);
+            const lng = Number(loc.lng);
+
+            if (Number.isFinite(lat) && Number.isFinite(lng) && hasTagMatch) {
+                parsedPoints.push(turf.point([lng, lat], { lat, lng }));
                 matchCount++;
             }
         });
@@ -428,7 +445,7 @@ function parseTargetTag() {
     lastDbscanMin = -1;
     lastDbscanReach = -1;
     cachedAutoMax = -1;
-    lastParsedTag = targetTag;
+    lastParsedTag = normalizedTargetTag;
 }
 
 function updateMap() {
