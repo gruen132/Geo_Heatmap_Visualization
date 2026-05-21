@@ -386,6 +386,23 @@ function getScaledSize(baseValue, currentZoom, baseZoom) {
     return Math.min(baseValue * scale, 120);
 }
 
+function escapeHtml(text) {
+    const htmlEscapes = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    };
+    return String(text).replace(/[&<>"']/g, ch => htmlEscapes[ch]);
+}
+
+function sanitizeFilenameSegment(text) {
+    const normalized = String(text).trim();
+    const sanitized = normalized.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/\s+/g, ' ');
+    return sanitized || 'Full';
+}
+
 function parseTargetTag() {
     const targetTag = document.getElementById('targetTag').value.trim();
     if (targetTag === lastParsedTag) return; 
@@ -402,7 +419,7 @@ function parseTargetTag() {
             }
         });
         const baseStatus = `<b>Success!</b> Loaded file.<br>Total locations: ${rawData.customCoordinates.length}`;
-        document.getElementById('fileStatus').innerHTML = `${baseStatus}<hr>Found <b>${matchCount}</b> match(es):<br>"<i>${targetTag}</i>"`;
+        document.getElementById('fileStatus').innerHTML = `${baseStatus}<hr>Found <b>${matchCount}</b> match(es):<br>"<i>${escapeHtml(targetTag)}</i>"`;
     }
     
     isPrefectureCached = false;
@@ -679,7 +696,7 @@ function exportMapToPNG() {
         }).then(canvas => {
             const link = document.createElement('a');
             const tagValue = document.getElementById('targetTag').value;
-            link.download = `DensityMap_${tagValue || 'Full'}.png`;
+            link.download = `DensityMap_${sanitizeFilenameSegment(tagValue)}.png`;
             link.href = canvas.toDataURL("image/png");
             link.click();
             restoreState();
