@@ -308,7 +308,7 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
             rawData.customCoordinates.forEach(loc => {
                 if (loc.extra && loc.extra.tags) {
                     const rawTags = loc.extra.tags;
-                    const tags = Array.isArray(rawTags) ? rawTags : [rawTags];
+                    const tags = ensureArray(rawTags);
                     tags.forEach(tag => uniqueTags.add(String(tag)));
                 }
             });
@@ -414,6 +414,10 @@ function normalizeTagValue(value) {
         .trim();
 }
 
+function ensureArray(value) {
+    return Array.isArray(value) ? value : [value];
+}
+
 function parseTargetTag() {
     const targetTag = document.getElementById('targetTag').value.trim();
     const normalizedTargetTag = normalizeTagValue(targetTag);
@@ -425,7 +429,7 @@ function parseTargetTag() {
     if (rawData && rawData.customCoordinates && normalizedTargetTag !== "") {
         rawData.customCoordinates.forEach(loc => {
             const rawTags = (loc.extra && loc.extra.tags) ? loc.extra.tags : [];
-            const tags = Array.isArray(rawTags) ? rawTags : [rawTags];
+            const tags = ensureArray(rawTags);
             const hasTagMatch = tags.some(tag => normalizeTagValue(tag) === normalizedTargetTag);
             const lat = Number(loc.lat);
             const lng = Number(loc.lng);
