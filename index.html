@@ -72,17 +72,17 @@
                 <datalist id="tagSuggestions"></datalist>
             </div>
             <div class="control-group checkbox-group">
-                <input type="checkbox" id="autoMax" checked style="width: auto;">
+                <input type="checkbox" id="autoMax" style="width: auto;">
                 <label for="autoMax" style="margin: 0; cursor: pointer;">Auto-Scale Colors to Densest Area</label>
             </div>
             <div class="control-group">
                 <label for="maxLocs">
                     Max Density Cap
                     <div class="number-input-wrapper">
-                        <input type="number" id="maxLocsInput" min="1" max="1000" value="50">
+                        <input type="number" id="maxLocsInput" min="1" max="1000" value="1">
                     </div>
                 </label>
-                <input type="range" id="maxLocs" min="1" max="1000" value="50">
+                <input type="range" id="maxLocs" min="1" max="1000" value="1">
             </div>
             <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 0;">
             <div class="control-group">
@@ -114,7 +114,7 @@
                 <select id="baseMap">
                     <option value="white">Clean White (For Export)</option>
                     <option value="light">Carto Light</option>
-                    <option value="dark">Carto Dark</option>
+                    <option value="dark" selected>Carto Dark</option>
                     <option value="satellite">Satellite Imagery</option>
                 </select>
             </div>
@@ -157,45 +157,45 @@
         </div>
     </details>
 
-    <details>
+    <details open>
         <summary>Advanced Tuning</summary>
         <div class="details-content">
             <div class="control-group">
                 <label for="resolution">
                     Shape Radius / Visual Size
                     <div class="number-input-wrapper">
-                        <input type="number" id="resolutionInput" min="1" max="100" value="8">
+                        <input type="number" id="resolutionInput" min="1" max="100" value="13">
                     </div>
                 </label>
-                <input type="range" id="resolution" min="1" max="100" value="8">
+                <input type="range" id="resolution" min="1" max="100" value="13">
             </div>
             <div class="control-group">
                 <label for="blur">
                     Blur Amount (Fuzzy Mode Only)
                     <div class="number-input-wrapper">
-                        <input type="number" id="blurInput" min="1" max="100" value="15">
+                        <input type="number" id="blurInput" min="1" max="100" value="19">
                     </div>
                 </label>
-                <input type="range" id="blur" min="1" max="100" value="15">
+                <input type="range" id="blur" min="1" max="100" value="19">
             </div>
             <div class="control-group">
                 <label for="faintness">
                     Faintness Eraser (%)
                     <div class="number-input-wrapper">
-                        <input type="number" id="faintnessInput" min="0" max="50" value="0">
+                        <input type="number" id="faintnessInput" min="0" max="50" value="19">
                     </div>
                 </label>
-                <input type="range" id="faintness" min="0" max="50" value="0">
+                <input type="range" id="faintness" min="0" max="50" value="19">
             </div>
             <div class="control-group">
                 <label for="intensity">
                     Intensity Multiplier (Fuzzy Only)
                     <div class="number-input-wrapper">
-                        <input type="number" id="intensityInput" min="1" max="200" step="1" value="25">
+                        <input type="number" id="intensityInput" min="1" max="200" step="1" value="83">
                         <span class="unit-label">x</span>
                     </div>
                 </label>
-                <input type="range" id="intensity" min="1" max="200" step="1" value="25">
+                <input type="range" id="intensity" min="1" max="200" step="1" value="83">
             </div>
             <div class="control-group">
                 <label for="borderWeight">
@@ -340,8 +340,7 @@ document.getElementById('targetTag').addEventListener('keyup', (e) => { if (e.ke
 document.getElementById('targetTag').addEventListener('blur', () => updateMap());
 document.getElementById('targetTag').addEventListener('change', () => updateMap());
 
-document.getElementById('baseMap').addEventListener('change', (e) => {
-    const val = e.target.value;
+function applyBaseMap(val, shouldUpdate = true) {
     const isDark = val === 'dark' || val === 'satellite';
     
     document.body.classList.toggle('dark-mode', isDark);
@@ -354,8 +353,14 @@ document.getElementById('baseMap').addEventListener('change', (e) => {
         currentBaseLayer = null;
         map.getContainer().style.background = '#ffffff'; 
     }
-    updateMap(); 
+    if (shouldUpdate) updateMap();
+}
+
+document.getElementById('baseMap').addEventListener('change', (e) => {
+    applyBaseMap(e.target.value);
 });
+
+applyBaseMap(document.getElementById('baseMap').value, false);
 
 let updateTimeout;
 function scheduleUpdate() {
