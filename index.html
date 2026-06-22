@@ -45,6 +45,12 @@
     .upload-label { cursor: pointer; color: #0066cc; font-weight: bold; font-size: 14px; }
     body.dark-mode .upload-label { color: #4da3ff; }
     .status { font-size: 12px; color: var(--text-muted); padding: 10px; border-radius: 4px; background: var(--bg-details); border: 1px solid var(--border-color); word-wrap: break-word; margin-top: 5px; }
+    .tag-selector-list { display: flex; flex-direction: column; gap: 8px; }
+    .tag-selector-row { display: flex; align-items: center; gap: 8px; }
+    .tag-selector-row input { flex: 1; }
+    .tag-selector-actions { margin-top: 8px; display: flex; }
+    .tag-selector-btn { border: 1px solid var(--border-color); background: var(--bg-input); color: var(--text-main); border-radius: 4px; width: 30px; height: 30px; cursor: pointer; font-size: 16px; line-height: 1; }
+    .tag-selector-btn:hover { background: var(--bg-hover); }
 
     .btn-export { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: background 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 5px; }
     .btn-export:hover { background: #218838; }
@@ -67,8 +73,15 @@
                 <div id="fileStatus" class="status">No file loaded.</div>
             </div>
             <div class="control-group">
-                <label for="targetTag">Target Tag</label>
-                <input type="text" id="targetTag" value="C-Type" list="tagSuggestions">
+                <label for="targetTag">Target Tag(s)</label>
+                <div id="tagSelectors" class="tag-selector-list">
+                    <div class="tag-selector-row">
+                        <input type="text" id="targetTag" class="target-tag-input" value="C-Type" list="tagSuggestions">
+                    </div>
+                </div>
+                <div class="tag-selector-actions">
+                    <button type="button" id="addTagSelectorBtn" class="tag-selector-btn" aria-label="Add tag selector">+</button>
+                </div>
                 <datalist id="tagSuggestions"></datalist>
             </div>
             <div class="control-group checkbox-group">
@@ -249,18 +262,18 @@ const customColorScales = {
     'viridis': ['#440154', '#482878', '#3e4a89', '#31688e', '#26828e', '#1f9e89', '#35b779', '#6ece58', '#b5de2b', '#fde725']
 };
 
-let lastParsedTag = null;
+let lastParsedTagsKey = null;
 let parsedPoints = [];
 let matchCount = 0;
+let parsedPointsByTag = new Map();
+let matchCountByTag = new Map();
+
+const tagColorPalette = ['#e53935', '#1e88e5', '#43a047', '#fb8c00', '#8e24aa', '#00acc1', '#fdd835', '#6d4c41', '#d81b60', '#7cb342'];
 
 let isPrefectureCached = false;
 let lastGridRes = -1;
 let lastGridType = null;
 let cachedGridFeatures = [];
-let lastDbscanMin = -1;
-let lastDbscanReach = -1; 
-let lastIntensity = -1;
-let cachedHeatPoints = [];
 let cachedAutoMax = -1;
 
 document.getElementById('fileStatus').innerText = "Downloading Japan map borders...";
@@ -322,7 +335,7 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
                 dataList.appendChild(option);
             });
 
-            lastParsedTag = null; 
+            lastParsedTagsKey = null; 
             updateMap(); 
         } catch (err) {
             document.getElementById('fileStatus').innerHTML = `<span style="color:red">Invalid JSON:</span><br>${err.message}`;
@@ -336,9 +349,30 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
     document.getElementById(id).addEventListener('change', () => updateMap());
 });
 
-document.getElementById('targetTag').addEventListener('keyup', (e) => { if (e.key === 'Enter') updateMap(); });
-document.getElementById('targetTag').addEventListener('blur', () => updateMap());
-document.getElementById('targetTag').addEventListener('change', () => updateMap());
+const tagSelectorsContainer = document.getElementById('tagSelectors');
+document.getElementById('addTagSelectorBtn').addEventListener('click', () => {
+    tagSelectorsContainer.appendChild(createTagSelectorRow('', true));
+    updateMap();
+});
+
+tagSelectorsContainer.addEventListener('click', (e) => {
+    if (e.target.classList.contains('remove-tag-selector-btn')) {
+        e.target.closest('.tag-selector-row').remove();
+        updateMap();
+    }
+});
+
+tagSelectorsContainer.addEventListener('change', (e) => {
+    if (e.target.classList.contains('target-tag-input')) updateMap();
+});
+
+tagSelectorsContainer.addEventListener('keyup', (e) => {
+    if (e.target.classList.contains('target-tag-input') && e.key === 'Enter') updateMap();
+});
+
+tagSelectorsContainer.addEventListener('focusout', (e) => {
+    if (e.target.classList.contains('target-tag-input')) updateMap();
+});
 
 function applyBaseMap(val, shouldUpdate = true) {
     const isDark = val === 'dark' || val === 'satellite';
@@ -411,37 +445,101 @@ function sanitizeFilenameSegment(text) {
     return sanitized || 'Full';
 }
 
-function parseTargetTag() {
-    const targetTag = document.getElementById('targetTag').value;
-    if (targetTag === lastParsedTag) return; 
+function getTagColor(index) {
+    return tagColorPalette[index % tagColorPalette.length];
+}
+
+function getTagInputs() {
+    return Array.from(document.querySelectorAll('.target-tag-input'));
+}
+
+function getSelectedTags() {
+    const selectedTags = [];
+    const seen = new Set();
+    getTagInputs().forEach(input => {
+        const tag = input.value.trim();
+        if (tag !== '' && !seen.has(tag)) {
+            seen.add(tag);
+            selectedTags.push(tag);
+        }
+    });
+    return selectedTags;
+}
+
+function createTagSelectorRow(initialValue = '', includeRemoveButton = true) {
+    const row = document.createElement('div');
+    row.className = 'tag-selector-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'target-tag-input';
+    input.value = initialValue;
+    input.setAttribute('list', 'tagSuggestions');
+    row.appendChild(input);
+
+    if (includeRemoveButton) {
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'tag-selector-btn remove-tag-selector-btn';
+        removeBtn.setAttribute('aria-label', 'Remove tag selector');
+        removeBtn.innerText = '−';
+        row.appendChild(removeBtn);
+    }
+
+    return row;
+}
+
+function parseTargetTags() {
+    const selectedTags = getSelectedTags();
+    const tagKey = selectedTags.join('|');
+    if (tagKey === lastParsedTagsKey) return;
     
     parsedPoints = [];
     matchCount = 0;
+    parsedPointsByTag = new Map();
+    matchCountByTag = new Map();
+    selectedTags.forEach(tag => {
+        parsedPointsByTag.set(tag, []);
+        matchCountByTag.set(tag, 0);
+    });
     
-    if (rawData && rawData.customCoordinates && targetTag !== "") {
+    if (rawData && rawData.customCoordinates && selectedTags.length > 0) {
         rawData.customCoordinates.forEach(loc => {
             const tags = (loc.extra && loc.extra.tags) ? loc.extra.tags : [];
-            if (loc.lat && loc.lng && tags.includes(targetTag)) {
-                parsedPoints.push(turf.point([loc.lng, loc.lat], { lat: loc.lat, lng: loc.lng }));
-                matchCount++;
-            }
+            if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng) || tags.length === 0) return;
+
+            let includedInCombined = false;
+            selectedTags.forEach(targetTag => {
+                if (tags.includes(targetTag)) {
+                    const point = turf.point([loc.lng, loc.lat], { lat: loc.lat, lng: loc.lng });
+                    parsedPointsByTag.get(targetTag).push(point);
+                    matchCountByTag.set(targetTag, (matchCountByTag.get(targetTag) || 0) + 1);
+                    if (!includedInCombined) {
+                        parsedPoints.push(point);
+                        matchCount++;
+                        includedInCombined = true;
+                    }
+                }
+            });
         });
+
         const baseStatus = `<b>Success!</b> Loaded file.<br>Total locations: ${rawData.customCoordinates.length}`;
-        document.getElementById('fileStatus').innerHTML = `${baseStatus}<hr>Found <b>${matchCount}</b> match(es):<br>"<i>${escapeHtml(targetTag)}</i>"`;
+        const tagStatusLines = selectedTags.map(tag => `"${escapeHtml(tag)}": <b>${matchCountByTag.get(tag) || 0}</b>`).join('<br>');
+        document.getElementById('fileStatus').innerHTML = `${baseStatus}<hr>Matched locations (unique): <b>${matchCount}</b><br>${tagStatusLines}`;
+    } else if (rawData && rawData.customCoordinates) {
+        document.getElementById('fileStatus').innerHTML = `<b>Success!</b> Loaded file.<br>Total locations: ${rawData.customCoordinates.length}<hr>Select at least one target tag.`;
     }
     
     isPrefectureCached = false;
     lastGridRes = -1;
     lastGridType = null;
-    lastDbscanMin = -1;
-    lastDbscanReach = -1;
     cachedAutoMax = -1;
-    lastParsedTag = targetTag;
+    lastParsedTagsKey = tagKey;
 }
 
 function updateMap() {
     if (!japanGeoData) return;
-    parseTargetTag();
+    parseTargetTags();
     
     activeLayers.forEach(layer => map.removeLayer(layer));
     activeLayers = [];
@@ -473,6 +571,14 @@ function updateMap() {
     const baseMapVal = document.getElementById('baseMap').value;
     const isDark = baseMapVal === 'dark' || baseMapVal === 'satellite';
     const borderColor = isDark ? '#ffffff' : '#000000';
+    const selectedTags = getSelectedTags();
+    const isMultiTagMode = selectedTags.length > 1;
+    const tagEntries = selectedTags.map((tag, index) => ({
+        tag,
+        color: getTagColor(index),
+        points: parsedPointsByTag.get(tag) || [],
+        count: matchCountByTag.get(tag) || 0
+    }));
 
     let pts = turf.featureCollection(parsedPoints);
     let actualMax = 0;
@@ -480,7 +586,25 @@ function updateMap() {
     if (mapType === 'prefecture') {
         if (!isPrefectureCached) {
             japanGeoData.features.forEach(feature => {
-                feature.properties.loc_count = matchCount > 0 ? turf.pointsWithinPolygon(pts, feature).features.length : 0;
+                if (isMultiTagMode) {
+                    let totalCount = 0;
+                    let dominantTag = null;
+                    let dominantCount = 0;
+                    tagEntries.forEach(entry => {
+                        if (entry.count === 0) return;
+                        const tagCount = turf.pointsWithinPolygon(turf.featureCollection(entry.points), feature).features.length;
+                        totalCount += tagCount;
+                        if (tagCount > dominantCount) {
+                            dominantCount = tagCount;
+                            dominantTag = entry;
+                        }
+                    });
+                    feature.properties.loc_count = totalCount;
+                    feature.properties.dominant_tag = dominantTag ? dominantTag.tag : '';
+                    feature.properties.dominant_color = dominantTag ? dominantTag.color : 'transparent';
+                } else {
+                    feature.properties.loc_count = matchCount > 0 ? turf.pointsWithinPolygon(pts, feature).features.length : 0;
+                }
             });
             isPrefectureCached = true;
         }
@@ -496,7 +620,25 @@ function updateMap() {
                         : turf.squareGrid(bbox, resolution, { units: 'kilometers' });
                         
                     grid.features.forEach(feature => {
-                        feature.properties.loc_count = turf.pointsWithinPolygon(pts, feature).features.length;
+                        if (isMultiTagMode) {
+                            let totalCount = 0;
+                            let dominantTag = null;
+                            let dominantCount = 0;
+                            tagEntries.forEach(entry => {
+                                if (entry.count === 0) return;
+                                const tagCount = turf.pointsWithinPolygon(turf.featureCollection(entry.points), feature).features.length;
+                                totalCount += tagCount;
+                                if (tagCount > dominantCount) {
+                                    dominantCount = tagCount;
+                                    dominantTag = entry;
+                                }
+                            });
+                            feature.properties.loc_count = totalCount;
+                            feature.properties.dominant_tag = dominantTag ? dominantTag.tag : '';
+                            feature.properties.dominant_color = dominantTag ? dominantTag.color : 'transparent';
+                        } else {
+                            feature.properties.loc_count = turf.pointsWithinPolygon(pts, feature).features.length;
+                        }
                     });
                     cachedGridFeatures = grid.features;
                 } else { cachedGridFeatures = []; }
@@ -548,13 +690,17 @@ function updateMap() {
                 const count = feature.properties.loc_count;
                 if (count >= minLocs) {
                     const cappedCount = Math.min(count, effectiveMaxLocs);
-                    return { fillColor: scale(cappedCount).hex(), weight: borderWeight, opacity: borderWeight > 0 ? 0.8 : 0, color: borderColor, fillOpacity: opacity };
+                    const fillColor = isMultiTagMode ? (feature.properties.dominant_color || '#999999') : scale(cappedCount).hex();
+                    return { fillColor, weight: borderWeight, opacity: borderWeight > 0 ? 0.8 : 0, color: borderColor, fillOpacity: opacity };
                 } else {
                     return { fillColor: 'transparent', weight: borderWeight, opacity: borderWeight > 0 ? 0.3 : 0, color: borderColor, fillOpacity: 0 };
                 }
             },
             onEachFeature: function(feature, layer) {
-                layer.bindTooltip(`<b>${feature.properties.nam_ja || "Prefecture"}</b><br>${feature.properties.loc_count || 0} locations`, { sticky: true });
+                const dominantInfo = isMultiTagMode && feature.properties.dominant_tag
+                    ? `<br>Top tag: ${escapeHtml(feature.properties.dominant_tag)}`
+                    : '';
+                layer.bindTooltip(`<b>${feature.properties.nam_ja || "Prefecture"}</b><br>${feature.properties.loc_count || 0} locations${dominantInfo}`, { sticky: true });
             }
         }).addTo(map);
         activeLayers.push(geoLayer);
@@ -571,12 +717,12 @@ function updateMap() {
                     
                     const circle = L.circle(latlng, {
                         radius: (resolution * 1000) / 2, 
-                        fillColor: scale(cappedCount).hex(),
+                        fillColor: isMultiTagMode ? (feature.properties.dominant_color || '#999999') : scale(cappedCount).hex(),
                         fillOpacity: opacity,
                         color: borderColor,
                         weight: borderWeight > 0 ? 0.5 : 0,
                         opacity: borderWeight > 0 ? 1 : 0
-                    }).bindTooltip(`<b>Density Area</b><br>${feature.properties.loc_count} locations`, { sticky: true });
+                    }).bindTooltip(`<b>Density Area</b><br>${feature.properties.loc_count} locations${isMultiTagMode && feature.properties.dominant_tag ? `<br>Top tag: ${escapeHtml(feature.properties.dominant_tag)}` : ''}`, { sticky: true });
                     
                     circle.addTo(map);
                     activeLayers.push(circle);
@@ -585,10 +731,11 @@ function updateMap() {
                 const gridLayer = L.geoJSON(filteredGrid, {
                     style: function(feature) {
                         const cappedCount = Math.min(feature.properties.loc_count, effectiveMaxLocs);
-                        return { fillColor: scale(cappedCount).hex(), weight: borderWeight > 0 ? 0.5 : 0, opacity: 1, color: borderColor, fillOpacity: opacity };
+                        const fillColor = isMultiTagMode ? (feature.properties.dominant_color || '#999999') : scale(cappedCount).hex();
+                        return { fillColor, weight: borderWeight > 0 ? 0.5 : 0, opacity: 1, color: borderColor, fillOpacity: opacity };
                     },
                     onEachFeature: function(feature, layer) {
-                        layer.bindTooltip(`<b>Grid Sector</b><br>${feature.properties.loc_count} locations`, { sticky: true });
+                        layer.bindTooltip(`<b>Grid Sector</b><br>${feature.properties.loc_count} locations${isMultiTagMode && feature.properties.dominant_tag ? `<br>Top tag: ${escapeHtml(feature.properties.dominant_tag)}` : ''}`, { sticky: true });
                     }
                 }).addTo(map);
                 activeLayers.push(gridLayer);
@@ -599,59 +746,62 @@ function updateMap() {
         activeLayers.push(outlineLayer);
     }
     else if (mapType === 'fuzzy' || mapType === 'fuzzy_solid') {
-        
-        if (lastDbscanMin !== minLocs || lastDbscanReach !== clusterReach || lastIntensity !== intensity) {
-            if (minLocs > 1 && matchCount > 0) {
-                let clustered = turf.clustersDbscan(pts, clusterReach, { units: 'kilometers', minPoints: minLocs });
-                cachedHeatPoints = clustered.features.filter(f => f.properties.dbscan !== 'noise').map(f => [f.properties.lat, f.properties.lng, intensity]);
-            } else {
-                cachedHeatPoints = pts.features.map(f => [f.properties.lat, f.properties.lng, intensity]);
-            }
-            lastDbscanMin = minLocs;
-            lastDbscanReach = clusterReach;
-            lastIntensity = intensity;
-        }
+        const heatLayers = [];
+        const heatSourceEntries = isMultiTagMode ? tagEntries.filter(entry => entry.points.length > 0) : [{ points: pts.features }];
 
-        if (cachedHeatPoints.length > 0) {
+        heatSourceEntries.forEach(sourceEntry => {
+            let sourcePoints = sourceEntry.points;
+            if (minLocs > 1 && sourcePoints.length > 0) {
+                let clustered = turf.clustersDbscan(turf.featureCollection(sourcePoints), clusterReach, { units: 'kilometers', minPoints: minLocs });
+                sourcePoints = clustered.features.filter(f => f.properties.dbscan !== 'noise');
+            }
+
+            const heatPoints = sourcePoints.map(f => [f.properties.lat, f.properties.lng, intensity]);
+            if (heatPoints.length === 0) return;
+
             let heatGradient = {};
-            
             if (faintness > 0) {
                 heatGradient[faintness] = 'rgba(0,0,0,0)';
             }
-            
-            for (let i = Math.max(0.05, faintness + 0.05); i <= 1.0; i += 0.05) { 
-                heatGradient[i] = scale(i * effectiveMaxLocs).hex(); 
+            for (let i = Math.max(0.05, faintness + 0.05); i <= 1.0; i += 0.05) {
+                heatGradient[i] = isMultiTagMode
+                    ? chroma(sourceEntry.color).alpha(Math.min(1, i)).css()
+                    : scale(i * effectiveMaxLocs).hex();
             }
-            
-            if (!heatGradient[1.0]) heatGradient[1.0] = scale(effectiveMaxLocs).hex();
+            if (!heatGradient[1.0]) heatGradient[1.0] = isMultiTagMode ? sourceEntry.color : scale(effectiveMaxLocs).hex();
 
-            const BASE_ZOOM = 5; 
+            const BASE_ZOOM = 5;
             const finalHeatMax = Math.max(0.001, effectiveMaxLocs / intensity);
             const isSolid = mapType === 'fuzzy_solid';
 
-            const heatLayer = L.heatLayer(cachedHeatPoints, {
+            const heatLayer = L.heatLayer(heatPoints, {
                 radius: getScaledSize(resolution, map.getZoom(), BASE_ZOOM),
-                blur: getScaledSize(blurValue, map.getZoom(), BASE_ZOOM), 
-                max: finalHeatMax, 
-                minOpacity: isSolid ? 0.95 : 0.2, 
+                blur: getScaledSize(blurValue, map.getZoom(), BASE_ZOOM),
+                max: finalHeatMax,
+                minOpacity: isSolid ? 0.95 : 0.2,
                 gradient: heatGradient
             }).addTo(map);
 
-            const canvas = document.querySelector('.leaflet-heatmap-layer');
-            if(canvas) canvas.style.opacity = opacity; 
+            heatLayers.push(heatLayer);
             activeLayers.push(heatLayer);
+        });
 
-            if (clipCoast && globalMaskLayer) {
-                let maskColor = '#ffffff'; 
-                if (baseMapVal === 'light') maskColor = '#d4dadc'; 
-                if (baseMapVal === 'dark') maskColor = '#0e0e0e'; 
-                if (baseMapVal === 'satellite') maskColor = '#000000'; 
+        document.querySelectorAll('.leaflet-heatmap-layer').forEach(canvas => {
+            canvas.style.opacity = opacity;
+        });
 
-                globalMaskLayer.setStyle({ fillColor: maskColor });
-                globalMaskLayer.addTo(map);
-                activeLayers.push(globalMaskLayer); 
-            }
+        if (heatLayers.length > 0 && clipCoast && globalMaskLayer) {
+            let maskColor = '#ffffff'; 
+            if (baseMapVal === 'light') maskColor = '#d4dadc'; 
+            if (baseMapVal === 'dark') maskColor = '#0e0e0e'; 
+            if (baseMapVal === 'satellite') maskColor = '#000000'; 
 
+            globalMaskLayer.setStyle({ fillColor: maskColor });
+            globalMaskLayer.addTo(map);
+            activeLayers.push(globalMaskLayer); 
+        }
+
+        if (heatLayers.length > 0) {
             const outlineLayer = L.geoJSON(japanGeoData, { 
                 pane: 'maskPane', 
                 style: { fillColor: 'transparent', weight: borderWeight, color: borderColor, opacity: borderWeight > 0 ? 0.6 : 0 }, 
@@ -660,12 +810,14 @@ function updateMap() {
             activeLayers.push(outlineLayer);
 
             zoomHandler = function() {
-                if (map.hasLayer(heatLayer)) {
-                    heatLayer.setOptions({
-                        radius: getScaledSize(resolution, map.getZoom(), BASE_ZOOM),
-                        blur: getScaledSize(blurValue, map.getZoom(), BASE_ZOOM)
-                    });
-                }
+                heatLayers.forEach(heatLayer => {
+                    if (map.hasLayer(heatLayer)) {
+                        heatLayer.setOptions({
+                            radius: getScaledSize(resolution, map.getZoom(), BASE_ZOOM),
+                            blur: getScaledSize(blurValue, map.getZoom(), BASE_ZOOM)
+                        });
+                    }
+                });
             };
             map.on('zoomend', zoomHandler);
         }
@@ -703,7 +855,7 @@ function exportMapToPNG() {
             scale: 4
         }).then(canvas => {
             const link = document.createElement('a');
-            const tagValue = document.getElementById('targetTag').value;
+            const tagValue = getSelectedTags().join('+') || 'Full';
             link.download = `DensityMap_${sanitizeFilenameSegment(tagValue)}.png`;
             link.href = canvas.toDataURL("image/png");
             link.click();
