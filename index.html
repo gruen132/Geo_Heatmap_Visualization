@@ -73,7 +73,7 @@
                 <div id="fileStatus" class="status">No file loaded.</div>
             </div>
             <div class="control-group">
-                <label for="targetTag">Target Tag(s)</label>
+                <label>Target Tag(s)</label>
                 <div id="tagSelectors" class="tag-selector-list">
                     <div class="tag-selector-row">
                         <input type="text" id="targetTag" class="target-tag-input" value="C-Type" list="tagSuggestions">
@@ -506,7 +506,7 @@ function parseTargetTags() {
     if (rawData && rawData.customCoordinates && selectedTags.length > 0) {
         rawData.customCoordinates.forEach(loc => {
             const tags = (loc.extra && loc.extra.tags) ? loc.extra.tags : [];
-            if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng) || tags.length === 0) return;
+            if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return;
 
             let includedInCombined = false;
             selectedTags.forEach(targetTag => {
@@ -524,7 +524,7 @@ function parseTargetTags() {
         });
 
         const baseStatus = `<b>Success!</b> Loaded file.<br>Total locations: ${rawData.customCoordinates.length}`;
-        const tagStatusLines = selectedTags.map(tag => `"${escapeHtml(tag)}": <b>${matchCountByTag.get(tag) || 0}</b>`).join('<br>');
+        const tagStatusLines = selectedTags.map(tag => `"${escapeHtml(tag)}": <b>${matchCountByTag.get(tag)}</b>`).join('<br>');
         document.getElementById('fileStatus').innerHTML = `${baseStatus}<hr>Matched locations (unique): <b>${matchCount}</b><br>${tagStatusLines}`;
     } else if (rawData && rawData.customCoordinates) {
         document.getElementById('fileStatus').innerHTML = `<b>Success!</b> Loaded file.<br>Total locations: ${rawData.customCoordinates.length}<hr>Select at least one target tag.`;
