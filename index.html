@@ -76,7 +76,7 @@
                 <label id="targetTagLabel">Target Tag(s)</label>
                 <div id="tagSelectors" class="tag-selector-list">
                     <div class="tag-selector-row">
-                        <input type="text" id="targetTag" class="target-tag-input" value="C-Type" list="tagSuggestions" aria-labelledby="targetTagLabel">
+                        <input type="text" id="targetTag" class="target-tag-input" value="C-Type" list="tagSuggestions" aria-labelledby="targetTagLabel" aria-label="Target tag">
                     </div>
                 </div>
                 <div class="tag-selector-actions">
@@ -477,6 +477,7 @@ function createTagSelectorRow(initialValue = '', includeRemoveButton = true) {
     input.value = initialValue;
     input.setAttribute('list', 'tagSuggestions');
     input.setAttribute('aria-labelledby', 'targetTagLabel');
+    input.setAttribute('aria-label', 'Target tag');
     row.appendChild(input);
 
     if (includeRemoveButton) {
