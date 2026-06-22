@@ -73,10 +73,10 @@
                 <div id="fileStatus" class="status">No file loaded.</div>
             </div>
             <div class="control-group">
-                <label>Target Tag(s)</label>
+                <label id="targetTagLabel">Target Tag(s)</label>
                 <div id="tagSelectors" class="tag-selector-list">
                     <div class="tag-selector-row">
-                        <input type="text" id="targetTag" class="target-tag-input" value="C-Type" list="tagSuggestions">
+                        <input type="text" id="targetTag" class="target-tag-input" value="C-Type" list="tagSuggestions" aria-labelledby="targetTagLabel">
                     </div>
                 </div>
                 <div class="tag-selector-actions">
@@ -269,6 +269,7 @@ let parsedPointsByTag = new Map();
 let matchCountByTag = new Map();
 
 const tagColorPalette = ['#e53935', '#1e88e5', '#43a047', '#fb8c00', '#8e24aa', '#00acc1', '#fdd835', '#6d4c41', '#d81b60', '#7cb342'];
+const defaultDominantColor = '#999999';
 
 let isPrefectureCached = false;
 let lastGridRes = -1;
@@ -475,6 +476,7 @@ function createTagSelectorRow(initialValue = '', includeRemoveButton = true) {
     input.className = 'target-tag-input';
     input.value = initialValue;
     input.setAttribute('list', 'tagSuggestions');
+    input.setAttribute('aria-labelledby', 'targetTagLabel');
     row.appendChild(input);
 
     if (includeRemoveButton) {
@@ -690,7 +692,7 @@ function updateMap() {
                 const count = feature.properties.loc_count;
                 if (count >= minLocs) {
                     const cappedCount = Math.min(count, effectiveMaxLocs);
-                    const fillColor = isMultiTagMode ? (feature.properties.dominant_color || '#999999') : scale(cappedCount).hex();
+                    const fillColor = isMultiTagMode ? (feature.properties.dominant_color || defaultDominantColor) : scale(cappedCount).hex();
                     return { fillColor, weight: borderWeight, opacity: borderWeight > 0 ? 0.8 : 0, color: borderColor, fillOpacity: opacity };
                 } else {
                     return { fillColor: 'transparent', weight: borderWeight, opacity: borderWeight > 0 ? 0.3 : 0, color: borderColor, fillOpacity: 0 };
@@ -717,7 +719,7 @@ function updateMap() {
                     
                     const circle = L.circle(latlng, {
                         radius: (resolution * 1000) / 2, 
-                        fillColor: isMultiTagMode ? (feature.properties.dominant_color || '#999999') : scale(cappedCount).hex(),
+                        fillColor: isMultiTagMode ? (feature.properties.dominant_color || defaultDominantColor) : scale(cappedCount).hex(),
                         fillOpacity: opacity,
                         color: borderColor,
                         weight: borderWeight > 0 ? 0.5 : 0,
@@ -731,7 +733,7 @@ function updateMap() {
                 const gridLayer = L.geoJSON(filteredGrid, {
                     style: function(feature) {
                         const cappedCount = Math.min(feature.properties.loc_count, effectiveMaxLocs);
-                        const fillColor = isMultiTagMode ? (feature.properties.dominant_color || '#999999') : scale(cappedCount).hex();
+                        const fillColor = isMultiTagMode ? (feature.properties.dominant_color || defaultDominantColor) : scale(cappedCount).hex();
                         return { fillColor, weight: borderWeight > 0 ? 0.5 : 0, opacity: 1, color: borderColor, fillOpacity: opacity };
                     },
                     onEachFeature: function(feature, layer) {
