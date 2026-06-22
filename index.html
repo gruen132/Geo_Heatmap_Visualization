@@ -76,7 +76,7 @@
                 <label id="targetTagLabel">Target Tag(s)</label>
                 <div id="tagSelectors" class="tag-selector-list">
                     <div class="tag-selector-row">
-                        <input type="text" id="targetTag" class="target-tag-input" value="C-Type" list="tagSuggestions" aria-labelledby="targetTagLabel">
+                        <input type="text" class="target-tag-input" value="C-Type" list="tagSuggestions" aria-labelledby="targetTagLabel">
                     </div>
                 </div>
                 <div class="tag-selector-actions">
@@ -603,7 +603,7 @@ function updateMap() {
                     });
                     feature.properties.loc_count = totalCount;
                     feature.properties.dominant_tag = dominantTag ? dominantTag.tag : '';
-                    feature.properties.dominant_color = dominantTag ? dominantTag.color : 'transparent';
+                    feature.properties.dominant_color = dominantTag ? dominantTag.color : defaultDominantColor;
                 } else {
                     feature.properties.loc_count = matchCount > 0 ? turf.pointsWithinPolygon(pts, feature).features.length : 0;
                 }
@@ -637,7 +637,7 @@ function updateMap() {
                             });
                             feature.properties.loc_count = totalCount;
                             feature.properties.dominant_tag = dominantTag ? dominantTag.tag : '';
-                            feature.properties.dominant_color = dominantTag ? dominantTag.color : 'transparent';
+                            feature.properties.dominant_color = dominantTag ? dominantTag.color : defaultDominantColor;
                         } else {
                             feature.properties.loc_count = turf.pointsWithinPolygon(pts, feature).features.length;
                         }
