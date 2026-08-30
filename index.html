@@ -62,6 +62,8 @@
     .btn-export:hover { background: var(--accent-hover); }
     .btn-export:active { transform: scale(0.98); }
     .btn-export:disabled { opacity: 0.7; cursor: progress; }
+    .btn-render-jp { width: 100%; padding: 10px; background: var(--bg-details); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; transition: background 0.2s; margin-top: 6px; }
+    .btn-render-jp:hover { background: var(--bg-hover); }
 
     /* Isolating the overlay pane means blend-modes on the heat-map canvases only
        mix with each other (and other overlay layers), never with the basemap
@@ -262,7 +264,8 @@
     </details>
     </div>
 
-    <button class="btn-export" onclick="exportMapToPNG()">📸 Export Map to PNG</button>
+    <button id="exportBtn" class="btn-export" onclick="exportMapToPNG()">📸 Export Map to PNG</button>
+    <button id="renderJpBtn" class="btn-render-jp" onclick="renderJapanFrame()">🗾 Render JP Frame</button>
 </div>
 
 <div class="map-wrap">
@@ -278,17 +281,30 @@
 
 <script>
 const map = L.map('map', { preferCanvas: true }).setView([36.2048, 138.2529], 5);
+const CARTO_API_KEY = 'cb1_2kwq_1_26184ba6c27cdd1ba3b68fad';
+const JP_MAIN_BOUNDS = L.latLngBounds([[30.0, 128.0], [45.5, 149.0]]);
+const OKINAWA_BOUNDS = L.latLngBounds([[24.0, 122.0], [28.8, 130.8]]);
 
 map.createPane('maskPane');
 map.getPane('maskPane').style.zIndex = 500;
 map.getPane('maskPane').style.pointerEvents = 'none';
 
 const tileUrls = {
-    light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    light: `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=${encodeURIComponent(CARTO_API_KEY)}`,
+    dark: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${encodeURIComponent(CARTO_API_KEY)}`,
     satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     white: ''
 };
+
+function renderJapanFrame() {
+    const mapSize = map.getSize();
+    const insetReservePx = Math.max(180, Math.round(mapSize.x * 0.35));
+    map.fitBounds(JP_MAIN_BOUNDS, {
+        animate: false,
+        paddingTopLeft: [24, 24],
+        paddingBottomRight: [insetReservePx, 24]
+    });
+}
 
 let currentBaseLayer = null;
 let activeLayers = [];
@@ -990,83 +1006,134 @@ function exportMapToPNG() {
     isExporting = true;
 
     const mapElement = document.getElementById('map');
-    const btn = document.querySelector('.btn-export');
+    const btn = document.getElementById('exportBtn');
+    const renderJpBtn = document.getElementById('renderJpBtn');
     const controls = document.querySelector('.leaflet-control-container');
 
     const originalCenter = map.getCenter();
     const originalZoom = map.getZoom();
 
     btn.disabled = true;
+    renderJpBtn.disabled = true;
     btn.innerText = "📸 Preparing map...";
     if (controls) controls.style.display = 'none';
-
-    const mainJapanBounds = L.latLngBounds([
-        [30.0, 128.0],
-        [45.5, 149.0]
-    ]);
-
-    map.fitBounds(mainJapanBounds, { animate: false });
 
     // Rather than guessing a fixed delay, actually wait for the basemap's
     // tiles to finish loading (with a hard safety cap so we never hang
     // forever if the 'load' event doesn't fire, e.g. on a fully-cached view).
-    function waitForTilesThenRender() {
-        if (!currentBaseLayer) {
-            setTimeout(renderCapture, 400);
-            return;
-        }
-        let done = false;
-        const finish = () => {
-            if (done) return;
-            done = true;
-            clearTimeout(safety);
-            setTimeout(renderCapture, 250);
-        };
-        const safety = setTimeout(finish, 6000);
-        currentBaseLayer.once('load', finish);
-        setTimeout(() => {
-            if (currentBaseLayer._loading === false) finish();
-        }, 700);
+    function waitForTiles() {
+        return new Promise(resolve => {
+            if (!currentBaseLayer) {
+                setTimeout(resolve, 400);
+                return;
+            }
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                clearTimeout(safety);
+                setTimeout(resolve, 250);
+            };
+            const safety = setTimeout(finish, 6000);
+            currentBaseLayer.once('load', finish);
+            setTimeout(() => {
+                if (currentBaseLayer._loading === false) finish();
+            }, 700);
+        });
     }
 
-    function renderCapture() {
-        btn.innerText = "📸 Rendering image...";
-
-        html2canvas(mapElement, {
+    function captureCurrentMap() {
+        return html2canvas(mapElement, {
             useCORS: true,
             allowTaint: false,
             backgroundColor: document.getElementById('baseMap').value === 'white' ? '#ffffff' : null,
             scale: 3,
             imageTimeout: 20000,
             logging: false
-        }).then(canvas => {
-            let dataUrl;
-            try {
-                dataUrl = canvas.toDataURL("image/png");
-            } catch (taintErr) {
-                throw new Error('CORS_TAINT');
-            }
-            const link = document.createElement('a');
-            const tagValue = getSelectedTags().join('+') || 'Full';
-            link.download = `DensityMap_${sanitizeFilenameSegment(tagValue)}.png`;
-            link.href = dataUrl;
-            link.click();
-            restoreState("✅ Export Complete!");
-        }).catch(err => {
-            if (err && err.message === 'CORS_TAINT') {
-                const themeName = document.getElementById('baseMap').selectedOptions[0].text;
-                alert(`Export blocked: the "${themeName}" background contains cross-origin map tiles your browser won't let us capture as an image.\n\nSwitch "Background Theme" to "Clean White" or a "Carto" theme and export again.`);
-            } else {
-                alert("Export failed: " + (err && err.message ? err.message : err));
-            }
+        });
+    }
+
+    function waitForTilesThenRender() {
+        renderJapanFrame();
+        waitForTiles().then(renderCapture).catch(err => {
+            alert("Export failed: " + (err && err.message ? err.message : err));
             restoreState("📸 Export Map to PNG");
         });
+    }
+
+    function composeWithOkinawaInset(mainCanvas, okinawaCanvas) {
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = mainCanvas.width;
+        outCanvas.height = mainCanvas.height;
+        const ctx = outCanvas.getContext('2d');
+        ctx.drawImage(mainCanvas, 0, 0);
+
+        const insetSize = Math.round(Math.min(outCanvas.width, outCanvas.height) * 0.26);
+        const outerPad = Math.round(insetSize * 0.08);
+        const innerPad = Math.round(insetSize * 0.04);
+        const x = outCanvas.width - insetSize - outerPad;
+        const y = outCanvas.height - insetSize - outerPad;
+
+        ctx.fillStyle = 'rgba(10, 10, 10, 0.92)';
+        ctx.fillRect(x, y, insetSize, insetSize);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(2, Math.round(insetSize * 0.015));
+        ctx.strokeRect(x, y, insetSize, insetSize);
+
+        ctx.drawImage(
+            okinawaCanvas,
+            x + innerPad,
+            y + innerPad,
+            insetSize - innerPad * 2,
+            insetSize - innerPad * 2
+        );
+
+        return outCanvas;
+    }
+
+    function renderCapture() {
+        btn.innerText = "📸 Rendering image...";
+
+        let mainCanvasRef = null;
+        captureCurrentMap()
+            .then(mainCanvas => {
+                mainCanvasRef = mainCanvas;
+                btn.innerText = "📸 Rendering Okinawa inset...";
+                map.fitBounds(OKINAWA_BOUNDS, { animate: false, padding: [20, 20] });
+                return waitForTiles();
+            })
+            .then(() => captureCurrentMap())
+            .then(okinawaCanvas => {
+                const finalCanvas = composeWithOkinawaInset(mainCanvasRef, okinawaCanvas);
+                let dataUrl;
+                try {
+                    dataUrl = finalCanvas.toDataURL("image/png");
+                } catch (taintErr) {
+                    throw new Error('CORS_TAINT');
+                }
+                const link = document.createElement('a');
+                const tagValue = getSelectedTags().join('+') || 'Full';
+                link.download = `DensityMap_${sanitizeFilenameSegment(tagValue)}.png`;
+                link.href = dataUrl;
+                link.click();
+                restoreState("✅ Export Complete!");
+            })
+            .catch(err => {
+                if (err && err.message === 'CORS_TAINT') {
+                    const themeName = document.getElementById('baseMap').selectedOptions[0].text;
+                    alert(`Export blocked: the "${themeName}" background contains cross-origin map tiles your browser won't let us capture as an image.\n\nSwitch "Background Theme" to "Clean White" or a "Carto" theme and export again.`);
+                } else {
+                    alert("Export failed: " + (err && err.message ? err.message : err));
+                }
+                restoreState("📸 Export Map to PNG");
+            });
     }
 
     function restoreState(label) {
         map.setView(originalCenter, originalZoom, { animate: false });
         if (controls) controls.style.display = '';
         btn.disabled = false;
+        renderJpBtn.disabled = false;
         btn.innerText = label;
         isExporting = false;
         if (label !== "📸 Export Map to PNG") {
